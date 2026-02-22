@@ -9,11 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Google Gemini AI ---
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+import urllib.request
+import urllib.error
 
 app = Flask(__name__)
 app.secret_key = 'smart-study-planner-secret-key-2026'
@@ -26,14 +23,15 @@ else:
 
 # --- Gemini AI Configuration ---
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-gemini_client = None
+gemini_client = True if GEMINI_API_KEY else False
 
-if GEMINI_AVAILABLE and GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_client = True  # Flag to indicate it is configured
-    except Exception:
-        gemini_client = None
+def call_gemini_rest(prompt, model_name):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+    data = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req) as response:
+        result = json.loads(response.read().decode())
+        return result['candidates'][0]['content']['parts'][0]['text'].strip()
 
 
 # ===================== DATABASE =====================
@@ -213,9 +211,7 @@ Respond ONLY with a valid JSON array of 4 objects, each with keys: "title", "des
     
     for model_name in models_to_try:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            text = response.text.strip()
+            text = call_gemini_rest(prompt, model_name)
             # Clean potential markdown wrapping
             if text.startswith('```'):
                 text = text.split('\n', 1)[1]
@@ -514,12 +510,12 @@ Respond naturally, concisely, and helpfully. Keep it under 3-4 sentences. Use em
     errors = []
     for model_name in models_to_try:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return jsonify({'reply': response.text.strip()})
+            text = call_gemini_rest(prompt, model_name)
+            return jsonify({'reply': text})
+        except urllib.error.HTTPError as e:
+            errors.append(f"[{model_name} failed: HTTP {e.code} - {e.read().decode()}]")
         except Exception as e:
             errors.append(f"[{model_name} failed: {str(e)}]")
-            continue
             
     return jsonify({'reply': f'Sorry, all AI models failed. Detailed Errors: {" ".join(errors)}'})
 
