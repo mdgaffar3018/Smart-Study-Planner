@@ -31,7 +31,7 @@ gemini_client = None
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        gemini_client = genai.GenerativeModel('gemini-2.0-flash')
+        gemini_client = genai.GenerativeModel('gemini-1.5-flash')
     except Exception:
         gemini_client = None
 
