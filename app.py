@@ -40,10 +40,20 @@ if GEMINI_AVAILABLE and GEMINI_API_KEY:
 
 def get_db():
     if 'db' not in g:
+        db_exists = os.path.exists(DATABASE)
         g.db = sqlite3.connect(DATABASE)
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=WAL")
+        
+        # Avoid WAL mode on Vercel as it can cause issues in /tmp
+        if not (os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV')):
+            g.db.execute("PRAGMA journal_mode=WAL")
+            
         g.db.execute("PRAGMA foreign_keys=ON")
+        
+        # If the DB was just created (common on Vercel cold starts), initialize it
+        if not db_exists:
+            init_db_with_connection(g.db)
+            
     return g.db
 
 
@@ -56,6 +66,10 @@ def close_db(exception):
 
 def init_db():
     db = sqlite3.connect(DATABASE)
+    init_db_with_connection(db)
+    db.close()
+
+def init_db_with_connection(db):
     db.executescript('''
         CREATE TABLE IF NOT EXISTS subjects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +133,6 @@ def init_db():
         INSERT INTO user_profile (id, xp, level) 
         SELECT 1, 0, 1 WHERE NOT EXISTS (SELECT 1 FROM user_profile WHERE id=1);
     ''')
-    db.close()
 
 
 # ===================== AI SUGGESTIONS =====================
