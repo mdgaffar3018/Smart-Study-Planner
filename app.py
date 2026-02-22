@@ -3,6 +3,10 @@ import os
 import json
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, g
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if present
+load_dotenv()
 
 # --- Google Gemini AI ---
 try:
