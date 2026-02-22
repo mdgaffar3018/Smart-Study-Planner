@@ -21,17 +21,26 @@ if os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV'):
 else:
     DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_planner.db')
 
-# --- Gemini AI Configuration ---
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-gemini_client = True if GEMINI_API_KEY else False
+# --- Groq AI Configuration (Open Source LLaMA) ---
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+ai_client_active = True if GROQ_API_KEY else False
 
-def call_gemini_rest(prompt, model_name):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-    data = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode('utf-8')
-    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+def call_groq_rest(prompt, model_name='llama3-8b-8192'):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    data = json.dumps({
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }).encode('utf-8')
+    
+    req = urllib.request.Request(url, data=data, headers={
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {GROQ_API_KEY}'
+    })
+    
     with urllib.request.urlopen(req) as response:
         result = json.loads(response.read().decode())
-        return result['candidates'][0]['content']['parts'][0]['text'].strip()
+        return result['choices'][0]['message']['content'].strip()
 
 
 # ===================== DATABASE =====================
@@ -177,17 +186,35 @@ def get_study_context(db):
 
 
 def get_ai_suggestions(db):
-    """Get AI-powered study suggestions using Gemini or fallback."""
+    """Factory function to get suggestions either from AI or fallback rules."""
     context = get_study_context(db)
+    
+    suggestions = []
+    ai_powered = False
 
-    if gemini_client:
-        return get_gemini_suggestions(context)
-    else:
-        return get_smart_fallback_suggestions(context)
+    if ai_client_active:
+        suggestions = get_groq_suggestions(context)
+        if suggestions and 'ai_powered' in suggestions[0] and suggestions[0]['ai_powered']:
+            ai_powered = True
+            suggestions = suggestions[1:] # Remove flag from list
+    
+    # Ensure we only return 4 valid suggestions
+    valid_suggestions = [s for s in suggestions if isinstance(s, dict) and all(k in s for k in ['title', 'description', 'type', 'priority'])][:4]
+    
+    # If we somehow got fewer than 4 or invalid ones, pad with fallbacks
+    if len(valid_suggestions) < 4:
+         fallback_sugs = get_smart_fallback_suggestions(context)
+         valid_suggestions.extend(fallback_sugs[:4 - len(valid_suggestions)])
+         
+    # Mark them with the type for the frontend
+    if ai_powered:
+        for s in valid_suggestions:
+            s['source'] = 'ai'
+            
+    return valid_suggestions
 
-
-def get_gemini_suggestions(context):
-    """Use Google Gemini to generate study suggestions."""
+def get_groq_suggestions(context):
+    """Use Groq LLaMA to generate study suggestions."""
     prompt = f"""You are a smart study planner AI assistant. Based on the following student data, provide exactly 4 actionable study suggestions. Each suggestion should have a title (max 8 words), a description (max 25 words), a type (one of: schedule, focus, break, goal, revision, balance), and a priority (high, medium, low).
 
 Student Data:
@@ -202,25 +229,17 @@ Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
 Respond ONLY with a valid JSON array of 4 objects, each with keys: "title", "description", "type", "priority". No markdown, no extra text."""
 
-    models_to_try = [
-        'gemini-1.5-flash', 
-        'gemini-1.5-flash-8b',
-        'gemini-1.5-flash-latest', 
-        'gemini-pro'
-    ]
-    
-    for model_name in models_to_try:
-        try:
-            text = call_gemini_rest(prompt, model_name)
-            # Clean potential markdown wrapping
-            if text.startswith('```'):
-                text = text.split('\n', 1)[1]
-                text = text.rsplit('```', 1)[0]
-            suggestions = json.loads(text)
-            if isinstance(suggestions, list) and len(suggestions) > 0:
-                return suggestions[:4]
-        except Exception:
-            continue
+    try:
+        text = call_groq_rest(prompt, model_name='llama3-8b-8192')
+        # Clean potential markdown wrapping
+        if text.startswith('```'):
+            text = text.split('\n', 1)[1]
+            text = text.rsplit('```', 1)[0]
+        suggestions = json.loads(text)
+        if isinstance(suggestions, list) and len(suggestions) > 0:
+            return suggestions[:4]
+    except Exception:
+        pass
 
     return get_smart_fallback_suggestions(context)
 
@@ -472,7 +491,7 @@ def api_stats():
 def api_suggestions():
     db = get_db()
     suggestions = get_ai_suggestions(db)
-    ai_powered = bool(gemini_client)
+    ai_powered = bool(ai_client_active)
     return jsonify({'suggestions': suggestions, 'ai_powered': ai_powered})
 
 
@@ -482,8 +501,8 @@ def api_chat():
     data = request.json
     user_message = data.get('message', '')
     
-    if not gemini_client:
-        return jsonify({'reply': 'Sorry, the AI Buddy is currently offline. Please set the GEMINI_API_KEY environment variable.'})
+    if not ai_client_active:
+        return jsonify({'reply': 'Sorry, the AI Buddy is currently offline. Please set the GROQ_API_KEY environment variable.'})
         
     db = get_db()
     context = get_study_context(db)
@@ -500,24 +519,13 @@ Here is their current study context:
 
 Respond naturally, concisely, and helpfully. Keep it under 3-4 sentences. Use emojis if appropriate. Acknowledge their tasks or stats if it makes sense contextually. Do not use markdown outside of bolding text. Do not return JSON."""
 
-    models_to_try = [
-        'gemini-1.5-flash', 
-        'gemini-1.5-flash-8b',
-        'gemini-1.5-flash-latest', 
-        'gemini-pro'
-    ]
-    
-    errors = []
-    for model_name in models_to_try:
-        try:
-            text = call_gemini_rest(prompt, model_name)
-            return jsonify({'reply': text})
-        except urllib.error.HTTPError as e:
-            errors.append(f"[{model_name} failed: HTTP {e.code} - {e.read().decode()}]")
-        except Exception as e:
-            errors.append(f"[{model_name} failed: {str(e)}]")
-            
-    return jsonify({'reply': f'Sorry, all AI models failed. Detailed Errors: {" ".join(errors)}'})
+    try:
+        text = call_groq_rest(prompt, model_name='llama-3.3-70b-versatile')
+        return jsonify({'reply': text})
+    except urllib.error.HTTPError as e:
+        return jsonify({'reply': f"[Groq Error: HTTP {e.code} - {e.read().decode()}]"})
+    except Exception as e:
+        return jsonify({'reply': f"[Groq Error: {str(e)}]"})
 
 # --- Subjects ---
 @app.route('/api/subjects', methods=['GET'])
@@ -824,9 +832,9 @@ def api_analytics():
 if __name__ == '__main__':
     init_db()
     print("\n  [*] Smart Study Planner running at http://localhost:5001\n")
-    if gemini_client:
-        print("  [AI] Suggestions: Powered by Google Gemini\n")
+    if ai_client_active:
+        print("  [AI] Suggestions: Powered by Groq LLaMA 3\n")
     else:
         print("  [AI] Suggestions: Smart Algorithm Mode")
-        print("  [!] Set GEMINI_API_KEY env variable for Gemini AI\n")
+        print("  [!] Set GROQ_API_KEY env variable for LLaMA AI\n")
     app.run(debug=True, port=5001)
