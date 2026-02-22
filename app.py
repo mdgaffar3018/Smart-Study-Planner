@@ -31,7 +31,7 @@ gemini_client = None
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        gemini_client = genai.GenerativeModel('gemini-1.5-flash-latest')
+        gemini_client = True  # Flag to indicate it is configured
     except Exception:
         gemini_client = None
 
@@ -204,18 +204,27 @@ Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
 Respond ONLY with a valid JSON array of 4 objects, each with keys: "title", "description", "type", "priority". No markdown, no extra text."""
 
-    try:
-        response = gemini_client.generate_content(prompt)
-        text = response.text.strip()
-        # Clean potential markdown wrapping
-        if text.startswith('```'):
-            text = text.split('\n', 1)[1]
-            text = text.rsplit('```', 1)[0]
-        suggestions = json.loads(text)
-        if isinstance(suggestions, list) and len(suggestions) > 0:
-            return suggestions[:4]
-    except Exception:
-        pass
+    models_to_try = [
+        'gemini-1.5-flash', 
+        'gemini-1.5-flash-8b',
+        'gemini-1.5-flash-latest', 
+        'gemini-pro'
+    ]
+    
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            # Clean potential markdown wrapping
+            if text.startswith('```'):
+                text = text.split('\n', 1)[1]
+                text = text.rsplit('```', 1)[0]
+            suggestions = json.loads(text)
+            if isinstance(suggestions, list) and len(suggestions) > 0:
+                return suggestions[:4]
+        except Exception:
+            continue
 
     return get_smart_fallback_suggestions(context)
 
@@ -495,11 +504,24 @@ Here is their current study context:
 
 Respond naturally, concisely, and helpfully. Keep it under 3-4 sentences. Use emojis if appropriate. Acknowledge their tasks or stats if it makes sense contextually. Do not use markdown outside of bolding text. Do not return JSON."""
 
-    try:
-        response = gemini_client.generate_content(prompt)
-        return jsonify({'reply': response.text.strip()})
-    except Exception as e:
-        return jsonify({'reply': f'Sorry, I encountered an error checking my circuits. {str(e)}'})
+    models_to_try = [
+        'gemini-1.5-flash', 
+        'gemini-1.5-flash-8b',
+        'gemini-1.5-flash-latest', 
+        'gemini-pro'
+    ]
+    
+    errors = []
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            return jsonify({'reply': response.text.strip()})
+        except Exception as e:
+            errors.append(f"[{model_name} failed: {str(e)}]")
+            continue
+            
+    return jsonify({'reply': f'Sorry, all AI models failed. Detailed Errors: {" ".join(errors)}'})
 
 # --- Subjects ---
 @app.route('/api/subjects', methods=['GET'])
