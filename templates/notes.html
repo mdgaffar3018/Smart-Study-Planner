@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Notes — Smart Study Planner{% endblock %}
+{% block page_title %}Notes{% endblock %}
+{% block page_subtitle %}Quick notes linked to your subjects.{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <div class="filter-group">
+        <button class="filter-btn active" onclick="filterNotes('all', this)">All</button>
+        <span id="noteSubjectFilters"></span>
+    </div>
+    <button class="btn btn-primary" onclick="openNoteModal()">
+        <i class="fas fa-plus"></i> Add Note
+    </button>
+</div>
+
+<div class="notes-grid" id="notesGrid">
+    <div class="empty-state" id="notesEmpty">
+        <i class="fas fa-sticky-note"></i>
+        <h3>No notes yet</h3>
+        <p>Create notes to capture ideas and key concepts.</p>
+    </div>
+</div>
+
+<!-- Note Modal -->
+<div class="modal" id="noteModal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3 id="noteModalTitle">Add Note</h3>
+            <button class="modal-close" onclick="closeModal('noteModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="noteForm" onsubmit="saveNote(event)">
+            <input type="hidden" id="noteId">
+            <div class="form-row">
+                <div class="form-group" style="flex:2">
+                    <label>Title</label>
+                    <input type="text" id="noteTitle" required placeholder="e.g. Key Formulas for Chapter 3">
+                </div>
+                <div class="form-group">
+                    <label>Subject</label>
+                    <select id="noteSubject">
+                        <option value="">No Subject</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Content</label>
+                <textarea id="noteContent" rows="10" placeholder="Write your notes here..."></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('noteModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Note</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allNotes = [];
+    let noteFilter = 'all';
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadNotes();
+        loadNoteSubjects();
+    });
+
+    async function loadNoteSubjects() {
+        const res = await fetch('/api/subjects');
+        const subjects = await res.json();
+        document.getElementById('noteSubject').innerHTML = '<option value="">No Subject</option>' +
+            subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        document.getElementById('noteSubjectFilters').innerHTML = subjects.map(s =>
+            `<button class="filter-btn" onclick="filterNotes('${s.id}', this)" style="--accent:${s.color}">${s.name}</button>`
+        ).join('');
+    }
+
+    async function loadNotes() {
+        const res = await fetch('/api/notes');
+        allNotes = await res.json();
+        renderNotes();
+    }
+
+    function filterNotes(filter, btn) {
+        noteFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        renderNotes();
+    }
+
+    function renderNotes() {
+        const grid = document.getElementById('notesGrid');
+        const empty = document.getElementById('notesEmpty');
+        const filtered = noteFilter === 'all' ? allNotes : allNotes.filter(n => String(n.subject_id) === noteFilter);
+
+        if (!filtered.length) { empty.style.display = 'flex'; grid.innerHTML = ''; grid.appendChild(empty); return; }
+        empty.style.display = 'none';
+
+        grid.innerHTML = filtered.map(n => `
+        <div class="note-card" style="--accent: ${n.subject_color || '#6C63FF'}">
+            <div class="note-card-header">
+                <h4>${n.title}</h4>
+                <div class="note-actions">
+                    <button class="btn-icon" onclick="editNote(${n.id})"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon danger" onclick="deleteNote(${n.id})"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <p class="note-content">${(n.content || '').substring(0, 200)}${(n.content || '').length > 200 ? '...' : ''}</p>
+            <div class="note-footer">
+                ${n.subject_name ? `<span class="note-subject" style="color: ${n.subject_color || '#6C63FF'}"><i class="fas fa-book"></i> ${n.subject_name}</span>` : ''}
+                <span class="note-date">${formatDate(n.updated_at || n.created_at)}</span>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    function openNoteModal() {
+        document.getElementById('noteModalTitle').textContent = 'Add Note';
+        document.getElementById('noteId').value = '';
+        document.getElementById('noteForm').reset();
+        openModal('noteModal');
+    }
+
+    function editNote(id) {
+        const n = allNotes.find(x => x.id === id);
+        if (!n) return;
+        document.getElementById('noteModalTitle').textContent = 'Edit Note';
+        document.getElementById('noteId').value = n.id;
+        document.getElementById('noteTitle').value = n.title;
+        document.getElementById('noteSubject').value = n.subject_id || '';
+        document.getElementById('noteContent').value = n.content || '';
+        openModal('noteModal');
+    }
+
+    async function saveNote(e) {
+        e.preventDefault();
+        const id = document.getElementById('noteId').value;
+        const body = {
+            title: document.getElementById('noteTitle').value,
+            subject_id: document.getElementById('noteSubject').value || null,
+            content: document.getElementById('noteContent').value
+        };
+        const url = id ? `/api/notes/${id}` : '/api/notes';
+        const method = id ? 'PUT' : 'POST';
+        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        closeModal('noteModal');
+        loadNotes();
+        showToast(id ? 'Note updated!' : 'Note added!', 'success');
+    }
+
+    async function deleteNote(id) {
+        if (!confirm('Delete this note?')) return;
+        await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+        loadNotes();
+        showToast('Note deleted', 'info');
+    }
+
+    function formatDate(d) {
+        if (!d) return '';
+        const date = new Date(d);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Subjects — Smart Study Planner{% endblock %}
+{% block page_title %}Subjects{% endblock %}
+{% block page_subtitle %}Manage your study subjects and courses.{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-primary" onclick="openSubjectModal()">
+        <i class="fas fa-plus"></i> Add Subject
+    </button>
+</div>
+
+<div class="subjects-grid" id="subjectsGrid">
+    <div class="empty-state" id="subjectsEmpty">
+        <i class="fas fa-book-open"></i>
+        <h3>No subjects yet</h3>
+        <p>Add your first subject to start organizing your studies.</p>
+        <button class="btn btn-primary" onclick="openSubjectModal()"><i class="fas fa-plus"></i> Add Subject</button>
+    </div>
+</div>
+
+<!-- Subject Modal -->
+<div class="modal" id="subjectModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="subjectModalTitle">Add Subject</h3>
+            <button class="modal-close" onclick="closeModal('subjectModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="subjectForm" onsubmit="saveSubject(event)">
+            <input type="hidden" id="subjectId">
+            <div class="form-group">
+                <label>Subject Name</label>
+                <input type="text" id="subjectName" required placeholder="e.g. Mathematics">
+            </div>
+            <div class="form-group">
+                <label>Color</label>
+                <div class="color-picker" id="colorPicker">
+                    <div class="color-option selected" data-color="#6C63FF" style="background:#6C63FF"></div>
+                    <div class="color-option" data-color="#FF6B6B" style="background:#FF6B6B"></div>
+                    <div class="color-option" data-color="#4ECDC4" style="background:#4ECDC4"></div>
+                    <div class="color-option" data-color="#FFD93D" style="background:#FFD93D"></div>
+                    <div class="color-option" data-color="#FF8A5C" style="background:#FF8A5C"></div>
+                    <div class="color-option" data-color="#A8E6CF" style="background:#A8E6CF"></div>
+                    <div class="color-option" data-color="#F093FB" style="background:#F093FB"></div>
+                    <div class="color-option" data-color="#4DA8DA" style="background:#4DA8DA"></div>
+                    <div class="color-option" data-color="#C9B1FF" style="background:#C9B1FF"></div>
+                    <div class="color-option" data-color="#FF6F91" style="background:#FF6F91"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Icon</label>
+                <div class="icon-picker" id="iconPicker">
+                    <div class="icon-option selected" data-icon="fa-book"><i class="fas fa-book"></i></div>
+                    <div class="icon-option" data-icon="fa-calculator"><i class="fas fa-calculator"></i></div>
+                    <div class="icon-option" data-icon="fa-flask"><i class="fas fa-flask"></i></div>
+                    <div class="icon-option" data-icon="fa-globe"><i class="fas fa-globe"></i></div>
+                    <div class="icon-option" data-icon="fa-laptop-code"><i class="fas fa-laptop-code"></i></div>
+                    <div class="icon-option" data-icon="fa-paint-brush"><i class="fas fa-paint-brush"></i></div>
+                    <div class="icon-option" data-icon="fa-music"><i class="fas fa-music"></i></div>
+                    <div class="icon-option" data-icon="fa-language"><i class="fas fa-language"></i></div>
+                    <div class="icon-option" data-icon="fa-atom"><i class="fas fa-atom"></i></div>
+                    <div class="icon-option" data-icon="fa-history"><i class="fas fa-history"></i></div>
+                    <div class="icon-option" data-icon="fa-brain"><i class="fas fa-brain"></i></div>
+                    <div class="icon-option" data-icon="fa-dna"><i class="fas fa-dna"></i></div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('subjectModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let selectedColor = '#6C63FF';
+    let selectedIcon = 'fa-book';
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSubjects();
+        document.querySelectorAll('.color-option').forEach(el => {
+            el.addEventListener('click', () => {
+                document.querySelectorAll('.color-option').forEach(o => o.classList.remove('selected'));
+                el.classList.add('selected');
+                selectedColor = el.dataset.color;
+            });
+        });
+        document.querySelectorAll('.icon-option').forEach(el => {
+            el.addEventListener('click', () => {
+                document.querySelectorAll('.icon-option').forEach(o => o.classList.remove('selected'));
+                el.classList.add('selected');
+                selectedIcon = el.dataset.icon;
+            });
+        });
+    });
+
+    async function loadSubjects() {
+        const res = await fetch('/api/subjects');
+        const subjects = await res.json();
+        const grid = document.getElementById('subjectsGrid');
+        const empty = document.getElementById('subjectsEmpty');
+
+        if (!subjects.length) { empty.style.display = 'flex'; return; }
+        empty.style.display = 'none';
+
+        grid.innerHTML = subjects.map(s => `
+        <div class="subject-card" style="--accent: ${s.color}">
+            <div class="subject-card-header">
+                <div class="subject-icon" style="background: ${s.color}20; color: ${s.color}">
+                    <i class="fas ${s.icon || 'fa-book'}"></i>
+                </div>
+                <div class="subject-actions">
+                    <button class="btn-icon" onclick="editSubject(${s.id}, '${s.name.replace(/'/g, "\\'")}', '${s.color}', '${s.icon}')"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon danger" onclick="deleteSubject(${s.id})"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <h3 class="subject-name">${s.name}</h3>
+            <div class="subject-stats">
+                <div class="subject-stat">
+                    <i class="fas fa-clock"></i>
+                    <span>${(s.total_hours || 0).toFixed(1)}h studied</span>
+                </div>
+                <div class="subject-stat">
+                    <i class="fas fa-tasks"></i>
+                    <span>${s.task_count || 0} tasks</span>
+                </div>
+            </div>
+            <div class="subject-bar">
+                <div class="subject-bar-fill" style="width: ${Math.min((s.total_hours || 0) * 5, 100)}%; background: ${s.color}"></div>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    function openSubjectModal() {
+        document.getElementById('subjectModalTitle').textContent = 'Add Subject';
+        document.getElementById('subjectId').value = '';
+        document.getElementById('subjectName').value = '';
+        selectedColor = '#6C63FF'; selectedIcon = 'fa-book';
+        document.querySelectorAll('.color-option').forEach(o => o.classList.toggle('selected', o.dataset.color === selectedColor));
+        document.querySelectorAll('.icon-option').forEach(o => o.classList.toggle('selected', o.dataset.icon === selectedIcon));
+        openModal('subjectModal');
+    }
+
+    function editSubject(id, name, color, icon) {
+        document.getElementById('subjectModalTitle').textContent = 'Edit Subject';
+        document.getElementById('subjectId').value = id;
+        document.getElementById('subjectName').value = name;
+        selectedColor = color; selectedIcon = icon;
+        document.querySelectorAll('.color-option').forEach(o => o.classList.toggle('selected', o.dataset.color === color));
+        document.querySelectorAll('.icon-option').forEach(o => o.classList.toggle('selected', o.dataset.icon === icon));
+        openModal('subjectModal');
+    }
+
+    async function saveSubject(e) {
+        e.preventDefault();
+        const id = document.getElementById('subjectId').value;
+        const body = { name: document.getElementById('subjectName').value, color: selectedColor, icon: selectedIcon };
+        const url = id ? `/api/subjects/${id}` : '/api/subjects';
+        const method = id ? 'PUT' : 'POST';
+        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        closeModal('subjectModal');
+        loadSubjects();
+        showToast(id ? 'Subject updated!' : 'Subject added!', 'success');
+    }
+
+    async function deleteSubject(id) {
+        if (!confirm('Delete this subject? All related planner blocks will also be removed.')) return;
+        await fetch(`/api/subjects/${id}`, { method: 'DELETE' });
+        loadSubjects();
+        showToast('Subject deleted', 'info');
+    }
+</script>
+{% endblock %}

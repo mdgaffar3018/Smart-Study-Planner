@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Smart Study Planner{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Welcome back! Here's your study overview.{% endblock %}
+
+{% block content %}
+<!-- AI Suggestions Section -->
+<section class="ai-suggestions-section" id="aiSuggestions">
+    <div class="section-header">
+        <h2><i class="fas fa-robot"></i> AI Study Suggestions</h2>
+        <button class="btn btn-sm btn-ghost" onclick="loadSuggestions()"><i class="fas fa-sync-alt"></i>
+            Refresh</button>
+    </div>
+    <div class="suggestions-grid" id="suggestionsGrid">
+        <div class="suggestion-skeleton"></div>
+        <div class="suggestion-skeleton"></div>
+        <div class="suggestion-skeleton"></div>
+        <div class="suggestion-skeleton"></div>
+    </div>
+    <div class="ai-source" id="aiSource"></div>
+</section>
+
+<!-- Stats Cards -->
+<section class="stats-grid" id="statsGrid">
+    <div class="stat-card stat-gradient-1">
+        <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+        <div class="stat-info">
+            <span class="stat-value" id="statHours">0</span>
+            <span class="stat-label">Study Hours</span>
+        </div>
+    </div>
+    <div class="stat-card stat-gradient-2">
+        <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+        <div class="stat-info">
+            <span class="stat-value" id="statTasks">0</span>
+            <span class="stat-label">Tasks Done</span>
+        </div>
+    </div>
+    <div class="stat-card stat-gradient-3">
+        <div class="stat-icon"><i class="fas fa-book"></i></div>
+        <div class="stat-info">
+            <span class="stat-value" id="statSubjects">0</span>
+            <span class="stat-label">Subjects</span>
+        </div>
+    </div>
+    <div class="stat-card stat-gradient-4">
+        <div class="stat-icon"><i class="fas fa-fire"></i></div>
+        <div class="stat-info">
+            <span class="stat-value" id="statStreak">0</span>
+            <span class="stat-label">Day Streak</span>
+        </div>
+    </div>
+</section>
+
+<!-- Charts + Lists Row -->
+<section class="dashboard-grid">
+    <div class="card chart-card">
+        <div class="card-header">
+            <h3><i class="fas fa-chart-bar"></i> Weekly Progress</h3>
+        </div>
+        <div class="card-body">
+            <canvas id="weeklyChart"></canvas>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="fas fa-exclamation-triangle"></i> Upcoming Deadlines</h3>
+        </div>
+        <div class="card-body" id="upcomingList">
+            <div class="empty-state-small">No upcoming deadlines</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="fas fa-history"></i> Recent Sessions</h3>
+        </div>
+        <div class="card-body" id="recentSessionsList">
+            <div class="empty-state-small">No recent sessions</div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        loadDashboard();
+        loadSuggestions();
+    });
+
+    async function loadDashboard() {
+        try {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+
+            animateValue('statHours', 0, data.total_hours, 1000);
+            animateValue('statTasks', 0, data.tasks_done, 1000);
+            animateValue('statSubjects', 0, data.subjects_count, 1000);
+            animateValue('statStreak', 0, data.streak, 1000);
+
+            renderWeeklyChart(data.weekly);
+            renderUpcoming(data.upcoming);
+            renderRecentSessions(data.recent_sessions);
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadSuggestions() {
+        const grid = document.getElementById('suggestionsGrid');
+        grid.innerHTML = '<div class="suggestion-skeleton"></div>'.repeat(4);
+        try {
+            const res = await fetch('/api/suggestions');
+            const data = await res.json();
+            renderSuggestions(data.suggestions, data.ai_powered);
+        } catch (e) {
+            grid.innerHTML = '<div class="empty-state-small">Could not load suggestions</div>';
+        }
+    }
+
+    function renderSuggestions(suggestions, aiPowered) {
+        const grid = document.getElementById('suggestionsGrid');
+        const source = document.getElementById('aiSource');
+
+        const typeIcons = {
+            'schedule': 'fa-calendar-check', 'focus': 'fa-bullseye', 'break': 'fa-mug-hot',
+            'goal': 'fa-trophy', 'revision': 'fa-redo', 'balance': 'fa-balance-scale'
+        };
+        const typeColors = {
+            'schedule': '#6C63FF', 'focus': '#FF6B6B', 'break': '#4ECDC4',
+            'goal': '#FFD93D', 'revision': '#A8E6CF', 'balance': '#FF8A5C'
+        };
+
+        grid.innerHTML = suggestions.map(s => `
+        <div class="suggestion-card" style="--accent: ${typeColors[s.type] || '#6C63FF'}">
+            <div class="suggestion-icon" style="background: ${typeColors[s.type] || '#6C63FF'}20; color: ${typeColors[s.type] || '#6C63FF'}">
+                <i class="fas ${typeIcons[s.type] || 'fa-lightbulb'}"></i>
+            </div>
+            <div class="suggestion-content">
+                <h4>${s.title}</h4>
+                <p>${s.description}</p>
+            </div>
+            <span class="suggestion-priority priority-${s.priority}">${s.priority}</span>
+        </div>
+    `).join('');
+
+        source.innerHTML = aiPowered
+            ? '<i class="fas fa-sparkles"></i> Powered by Google Gemini AI'
+            : '<i class="fas fa-brain"></i> Smart Algorithm Suggestions — Set GEMINI_API_KEY for AI';
+    }
+
+    function renderWeeklyChart(weekly) {
+        const ctx = document.getElementById('weeklyChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: weekly.map(w => w.day),
+                datasets: [{
+                    label: 'Hours',
+                    data: weekly.map(w => w.hours),
+                    backgroundColor: 'rgba(108, 99, 255, 0.6)',
+                    borderColor: '#6C63FF',
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+                    x: { grid: { display: false }, ticks: { color: '#888' } }
+                }
+            }
+        });
+    }
+
+    function renderUpcoming(tasks) {
+        const el = document.getElementById('upcomingList');
+        if (!tasks.length) { el.innerHTML = '<div class="empty-state-small"><i class="fas fa-check-circle"></i> No upcoming deadlines</div>'; return; }
+        el.innerHTML = tasks.map(t => {
+            const days = Math.ceil((new Date(t.deadline) - new Date()) / 86400000);
+            const urgency = days < 0 ? 'overdue' : days <= 2 ? 'urgent' : 'normal';
+            return `<div class="list-item ${urgency}">
+            <div class="list-item-color" style="background: ${t.subject_color || '#6C63FF'}"></div>
+            <div class="list-item-info">
+                <span class="list-item-title">${t.title}</span>
+                <span class="list-item-sub">${t.subject_name || 'No subject'}</span>
+            </div>
+            <span class="list-item-badge ${urgency}">${days < 0 ? 'Overdue' : days === 0 ? 'Today' : days + 'd left'}</span>
+        </div>`;
+        }).join('');
+    }
+
+    function renderRecentSessions(sessions) {
+        const el = document.getElementById('recentSessionsList');
+        if (!sessions.length) { el.innerHTML = '<div class="empty-state-small"><i class="fas fa-coffee"></i> No sessions yet</div>'; return; }
+        el.innerHTML = sessions.map(s => `
+        <div class="list-item">
+            <div class="list-item-color" style="background: ${s.subject_color || '#6C63FF'}"></div>
+            <div class="list-item-info">
+                <span class="list-item-title">${s.subject_name || 'General'}</span>
+                <span class="list-item-sub">${formatTimeAgo(s.created_at)}</span>
+            </div>
+            <span class="list-item-badge">${s.duration_minutes} min</span>
+        </div>
+    `).join('');
+    }
+
+    function animateValue(id, start, end, duration) {
+        const el = document.getElementById(id);
+        const isFloat = end % 1 !== 0;
+        const range = end - start;
+        const startTime = performance.now();
+        function update(currentTime) {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const current = start + range * eased;
+            el.textContent = isFloat ? current.toFixed(1) : Math.round(current);
+            if (progress < 1) requestAnimationFrame(update);
+        }
+        requestAnimationFrame(update);
+    }
+
+    function formatTimeAgo(dateStr) {
+        const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    }
+</script>
+{% endblock %}

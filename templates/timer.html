@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% block title %}Pomodoro Timer — Smart Study Planner{% endblock %}
+{% block page_title %}Pomodoro Timer{% endblock %}
+{% block page_subtitle %}Focus with 25-minute study sessions and 5-minute breaks.{% endblock %}
+
+{% block content %}
+<div class="timer-layout">
+    <div class="timer-main">
+        <div class="timer-card">
+            <div class="timer-mode-tabs">
+                <button class="timer-tab active" data-mode="focus" onclick="setTimerMode('focus', this)">
+                    <i class="fas fa-brain"></i> Focus
+                </button>
+                <button class="timer-tab" data-mode="short" onclick="setTimerMode('short', this)">
+                    <i class="fas fa-mug-hot"></i> Short Break
+                </button>
+                <button class="timer-tab" data-mode="long" onclick="setTimerMode('long', this)">
+                    <i class="fas fa-couch"></i> Long Break
+                </button>
+            </div>
+
+            <div class="timer-circle-container">
+                <svg class="timer-svg" viewBox="0 0 260 260">
+                    <circle class="timer-bg-circle" cx="130" cy="130" r="120" />
+                    <circle class="timer-progress-circle" id="timerProgress" cx="130" cy="130" r="120" />
+                </svg>
+                <div class="timer-display">
+                    <span class="timer-time" id="timerTime">25:00</span>
+                    <span class="timer-label" id="timerLabel">Focus Time</span>
+                </div>
+            </div>
+
+            <div class="timer-controls">
+                <button class="btn btn-icon-lg" onclick="resetTimer()" id="resetBtn">
+                    <i class="fas fa-redo"></i>
+                </button>
+                <button class="btn btn-primary btn-lg timer-start-btn" onclick="toggleTimer()" id="startBtn">
+                    <i class="fas fa-play" id="startIcon"></i>
+                    <span id="startText">Start</span>
+                </button>
+                <button class="btn btn-icon-lg" onclick="skipTimer()" id="skipBtn">
+                    <i class="fas fa-forward"></i>
+                </button>
+            </div>
+
+            <div class="timer-subject-select">
+                <label>Studying:</label>
+                <select id="timerSubject">
+                    <option value="">Select Subject</option>
+                </select>
+            </div>
+
+            <div class="timer-sessions">
+                <span class="sessions-label">Sessions Completed:</span>
+                <div class="sessions-dots" id="sessionsDots"></div>
+                <span class="sessions-count" id="sessionsCount">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="timer-sidebar">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-cog"></i> Settings</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>Focus Duration (min)</label>
+                    <input type="number" id="focusDuration" value="25" min="1" max="120" onchange="updateSettings()">
+                </div>
+                <div class="form-group">
+                    <label>Short Break (min)</label>
+                    <input type="number" id="shortBreak" value="5" min="1" max="30" onchange="updateSettings()">
+                </div>
+                <div class="form-group">
+                    <label>Long Break (min)</label>
+                    <input type="number" id="longBreak" value="15" min="1" max="60" onchange="updateSettings()">
+                </div>
+                <div class="form-group">
+                    <label>Long Break After</label>
+                    <input type="number" id="longBreakAfter" value="4" min="2" max="10" onchange="updateSettings()">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-history"></i> Today's Log</h3>
+            </div>
+            <div class="card-body" id="todayLog">
+                <div class="empty-state-small">No sessions today</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const CIRCUMFERENCE = 2 * Math.PI * 120;
+    let timerInterval = null;
+    let isRunning = false;
+    let currentMode = 'focus';
+    let timeLeft = 25 * 60;
+    let totalTime = 25 * 60;
+    let sessionsCompleted = 0;
+
+    const settings = { focus: 25, short: 5, long: 15, longAfter: 4 };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const circle = document.getElementById('timerProgress');
+        circle.style.strokeDasharray = CIRCUMFERENCE;
+        circle.style.strokeDashoffset = 0;
+        loadTimerSubjects();
+        loadTodayLog();
+        updateSessionDots();
+    });
+
+    async function loadTimerSubjects() {
+        const res = await fetch('/api/subjects');
+        const subjects = await res.json();
+        const sel = document.getElementById('timerSubject');
+        sel.innerHTML = '<option value="">Select Subject</option>' +
+            subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    }
+
+    function setTimerMode(mode, btn) {
+        if (isRunning) return;
+        currentMode = mode;
+        document.querySelectorAll('.timer-tab').forEach(t => t.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+
+        const durations = { focus: settings.focus, short: settings.short, long: settings.long };
+        const labels = { focus: 'Focus Time', short: 'Short Break', long: 'Long Break' };
+
+        timeLeft = durations[mode] * 60;
+        totalTime = timeLeft;
+        updateDisplay();
+        document.getElementById('timerLabel').textContent = labels[mode];
+
+        const circle = document.getElementById('timerProgress');
+        circle.style.strokeDashoffset = 0;
+        circle.classList.toggle('break-mode', mode !== 'focus');
+    }
+
+    function toggleTimer() {
+        if (isRunning) {
+            pauseTimer();
+        } else {
+            startTimer();
+        }
+    }
+
+    function startTimer() {
+        isRunning = true;
+        document.getElementById('startIcon').className = 'fas fa-pause';
+        document.getElementById('startText').textContent = 'Pause';
+        document.querySelector('.timer-circle-container').classList.add('active');
+
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            updateDisplay();
+            updateProgressCircle();
+
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                timerComplete();
+            }
+        }, 1000);
+    }
+
+    function pauseTimer() {
+        isRunning = false;
+        clearInterval(timerInterval);
+        document.getElementById('startIcon').className = 'fas fa-play';
+        document.getElementById('startText').textContent = 'Resume';
+        document.querySelector('.timer-circle-container').classList.remove('active');
+    }
+
+    function resetTimer() {
+        pauseTimer();
+        timeLeft = totalTime;
+        updateDisplay();
+        document.getElementById('timerProgress').style.strokeDashoffset = 0;
+        document.getElementById('startText').textContent = 'Start';
+    }
+
+    function skipTimer() {
+        clearInterval(timerInterval);
+        isRunning = false;
+        timerComplete();
+    }
+
+    async function timerComplete() {
+        document.querySelector('.timer-circle-container').classList.remove('active');
+        document.getElementById('startIcon').className = 'fas fa-play';
+        document.getElementById('startText').textContent = 'Start';
+
+        // Play sound
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.frequency.value = 800; gain.gain.value = 0.3;
+            osc.start();
+            setTimeout(() => { osc.stop(); audioCtx.close(); }, 500);
+        } catch (e) { }
+
+        if (currentMode === 'focus') {
+            sessionsCompleted++;
+            updateSessionDots();
+
+            // Log session
+            const subjectId = document.getElementById('timerSubject').value;
+            const res = await fetch('/api/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    subject_id: subjectId || null,
+                    duration_minutes: settings.focus,
+                    session_type: 'pomodoro',
+                    notes: `Pomodoro session #${sessionsCompleted}`
+                })
+            });
+            const data = await res.json();
+            if (data.earned_xp) {
+                window.showXpToast(data.earned_xp);
+            }
+            loadTodayLog();
+
+            showToast(`Focus session complete! 🎉 Session #${sessionsCompleted}`, 'success');
+
+            // Auto switch to break
+            if (sessionsCompleted % settings.longAfter === 0) {
+                setTimerMode('long', document.querySelector('[data-mode="long"]'));
+            } else {
+                setTimerMode('short', document.querySelector('[data-mode="short"]'));
+            }
+        } else {
+            showToast('Break over! Time to focus! 💪', 'info');
+            setTimerMode('focus', document.querySelector('[data-mode="focus"]'));
+        }
+    }
+
+    function updateDisplay() {
+        const min = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+        const sec = (timeLeft % 60).toString().padStart(2, '0');
+        document.getElementById('timerTime').textContent = `${min}:${sec}`;
+        document.title = `${min}:${sec} — Pomodoro`;
+    }
+
+    function updateProgressCircle() {
+        const progress = 1 - (timeLeft / totalTime);
+        const offset = CIRCUMFERENCE * progress;
+        document.getElementById('timerProgress').style.strokeDashoffset = offset;
+    }
+
+    function updateSessionDots() {
+        const dots = document.getElementById('sessionsDots');
+        const count = document.getElementById('sessionsCount');
+        count.textContent = sessionsCompleted;
+        let html = '';
+        for (let i = 0; i < Math.min(sessionsCompleted, 8); i++) {
+            html += '<span class="session-dot filled"></span>';
+        }
+        for (let i = sessionsCompleted; i < settings.longAfter; i++) {
+            html += '<span class="session-dot"></span>';
+        }
+        dots.innerHTML = html;
+    }
+
+    function updateSettings() {
+        settings.focus = parseInt(document.getElementById('focusDuration').value) || 25;
+        settings.short = parseInt(document.getElementById('shortBreak').value) || 5;
+        settings.long = parseInt(document.getElementById('longBreak').value) || 15;
+        settings.longAfter = parseInt(document.getElementById('longBreakAfter').value) || 4;
+        if (!isRunning) setTimerMode(currentMode, document.querySelector(`[data-mode="${currentMode}"]`));
+        updateSessionDots();
+    }
+
+    async function loadTodayLog() {
+        const res = await fetch('/api/sessions');
+        const sessions = await res.json();
+        const today = new Date().toISOString().split('T')[0];
+        const todaySessions = sessions.filter(s => s.created_at && s.created_at.startsWith(today));
+        const el = document.getElementById('todayLog');
+        if (!todaySessions.length) {
+            el.innerHTML = '<div class="empty-state-small">No sessions today</div>';
+            return;
+        }
+        const totalMin = todaySessions.reduce((a, s) => a + s.duration_minutes, 0);
+        el.innerHTML = `<div class="today-summary"><strong>${todaySessions.length}</strong> sessions · <strong>${totalMin}</strong> min total</div>` +
+            todaySessions.map(s => `
+            <div class="list-item small">
+                <div class="list-item-color" style="background: ${s.subject_color || '#6C63FF'}"></div>
+                <div class="list-item-info">
+                    <span class="list-item-title">${s.subject_name || 'General'}</span>
+                </div>
+                <span class="list-item-badge">${s.duration_minutes}m</span>
+            </div>
+        `).join('');
+    }
+</script>
+{% endblock %}

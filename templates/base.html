@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Smart Study Planner{% endblock %}</title>
+    <meta name="description"
+        content="AI-powered smart study planner to track subjects, tasks, study sessions, and goals.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <div class="logo-icon"><i class="fas fa-graduation-cap"></i></div>
+                <span class="logo-text">StudyAI</span>
+            </div>
+            <button class="sidebar-close" id="sidebarClose"><i class="fas fa-times"></i></button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-link {% if active == 'dashboard' %}active{% endif %}" data-tooltip="Dashboard">
+                <i class="fas fa-th-large"></i><span>Dashboard</span>
+            </a>
+            <a href="/subjects" class="nav-link {% if active == 'subjects' %}active{% endif %}" data-tooltip="Subjects">
+                <i class="fas fa-book-open"></i><span>Subjects</span>
+            </a>
+            <a href="/tasks" class="nav-link {% if active == 'tasks' %}active{% endif %}" data-tooltip="Tasks">
+                <i class="fas fa-tasks"></i><span>Tasks</span>
+            </a>
+            <a href="/timer" class="nav-link {% if active == 'timer' %}active{% endif %}" data-tooltip="Pomodoro">
+                <i class="fas fa-clock"></i><span>Pomodoro</span>
+            </a>
+            <a href="/planner" class="nav-link {% if active == 'planner' %}active{% endif %}" data-tooltip="Planner">
+                <i class="fas fa-calendar-alt"></i><span>Planner</span>
+            </a>
+            <a href="/analytics" class="nav-link {% if active == 'analytics' %}active{% endif %}"
+                data-tooltip="Analytics">
+                <i class="fas fa-chart-line"></i><span>Analytics</span>
+            </a>
+            <a href="/notes" class="nav-link {% if active == 'notes' %}active{% endif %}" data-tooltip="Notes">
+                <i class="fas fa-sticky-note"></i><span>Notes</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="user-profile-badge" id="userProfileBadge">
+                <div class="profile-info">
+                    <span class="profile-level" id="navLevel">Lvl 1</span>
+                    <span class="profile-xp"><span id="navXp">0</span> / 500 XP</span>
+                </div>
+                <div class="profile-progress">
+                    <div class="profile-progress-fill" id="navXpFill" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="ai-badge mt-3">
+                <i class="fas fa-robot"></i>
+                <span>AI Powered</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="top-header">
+            <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
+            <div class="header-title">
+                <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+                <p class="header-subtitle">{% block page_subtitle %}Welcome back! Here's your study overview.{% endblock
+                    %}</p>
+            </div>
+            <div class="header-actions">
+                <div class="current-time" id="currentTime"></div>
+            </div>
+        </header>
+
+        <div class="content-area">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <!-- AI Study Buddy Chatbot -->
+    <div class="chatbot-widget">
+        <button class="chatbot-toggle" id="chatbotToggle" title="Chat with AI Buddy">
+            <i class="fas fa-comment-dots"></i>
+        </button>
+        <div class="chatbot-window" id="chatbotWindow">
+            <div class="chatbot-header">
+                <div class="chatbot-title">
+                    <i class="fas fa-robot"></i> StudyAI Buddy
+                </div>
+                <button class="chatbot-close" id="chatbotClose"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="chatbot-messages" id="chatbotMessages">
+                <div class="chat-msg ai">
+                    <div class="msg-avatar"><i class="fas fa-robot"></i></div>
+                    <div class="msg-bubble">Hi there! 👋 I'm your AI Study Buddy. How can I help you today?</div>
+                </div>
+            </div>
+            <div class="chatbot-input">
+                <input type="text" id="chatInput" placeholder="Ask me anything..." autocomplete="off">
+                <button id="chatSend"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

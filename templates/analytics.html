@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% block title %}Analytics — Smart Study Planner{% endblock %}
+{% block page_title %}Analytics{% endblock %}
+{% block page_subtitle %}Visualize your study patterns and progress.{% endblock %}
+
+{% block content %}
+<div class="analytics-grid">
+    <!-- Study Hours by Subject -->
+    <div class="card analytics-card">
+        <div class="card-header">
+            <h3><i class="fas fa-chart-pie"></i> Hours by Subject</h3>
+        </div>
+        <div class="card-body chart-container">
+            <canvas id="subjectChart"></canvas>
+            <div class="empty-state-small" id="subjectChartEmpty" style="display:none">
+                <i class="fas fa-chart-pie"></i> No data yet
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Trend -->
+    <div class="card analytics-card wide">
+        <div class="card-header">
+            <h3><i class="fas fa-chart-line"></i> 30-Day Study Trend</h3>
+        </div>
+        <div class="card-body chart-container">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Productivity by Hour -->
+    <div class="card analytics-card">
+        <div class="card-header">
+            <h3><i class="fas fa-clock"></i> Productivity by Hour</h3>
+        </div>
+        <div class="card-body chart-container">
+            <canvas id="hourChart"></canvas>
+            <div class="empty-state-small" id="hourChartEmpty" style="display:none">
+                <i class="fas fa-clock"></i> No data yet
+            </div>
+        </div>
+    </div>
+
+    <!-- Goals -->
+    <div class="card analytics-card">
+        <div class="card-header">
+            <h3><i class="fas fa-trophy"></i> Goals Progress</h3>
+            <button class="btn btn-sm btn-ghost" onclick="openGoalModal()"><i class="fas fa-plus"></i> Add</button>
+        </div>
+        <div class="card-body" id="goalsList">
+            <div class="empty-state-small"><i class="fas fa-trophy"></i> No goals set</div>
+        </div>
+    </div>
+
+    <!-- Session Log -->
+    <div class="card analytics-card wide">
+        <div class="card-header">
+            <h3><i class="fas fa-list"></i> Session Log</h3>
+            <button class="btn btn-sm btn-ghost" onclick="openSessionModal()"><i class="fas fa-plus"></i> Log
+                Session</button>
+        </div>
+        <div class="card-body" id="sessionLog">
+            <div class="empty-state-small"><i class="fas fa-history"></i> No sessions logged</div>
+        </div>
+    </div>
+</div>
+
+<!-- Goal Modal -->
+<div class="modal" id="goalModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add Study Goal</h3>
+            <button class="modal-close" onclick="closeModal('goalModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <form onsubmit="saveGoal(event)">
+            <div class="form-group">
+                <label>Goal Title</label>
+                <input type="text" id="goalTitle" required placeholder="e.g. Complete Math syllabus">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Target Hours</label>
+                    <input type="number" id="goalHours" value="10" min="1" max="1000">
+                </div>
+                <div class="form-group">
+                    <label>Deadline</label>
+                    <input type="date" id="goalDeadline">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('goalModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Goal</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Session Modal -->
+<div class="modal" id="sessionModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Log Study Session</h3>
+            <button class="modal-close" onclick="closeModal('sessionModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <form onsubmit="saveSession(event)">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Subject</label>
+                    <select id="sessionSubject">
+                        <option value="">Select Subject</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Duration (minutes)</label>
+                    <input type="number" id="sessionDuration" value="30" min="1" max="600" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="sessionNotes" rows="2" placeholder="What did you study?"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('sessionModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Log Session</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        loadAnalytics();
+        loadGoals();
+        loadSessionLog();
+        loadSubjectsForSession();
+    });
+
+    async function loadSubjectsForSession() {
+        const res = await fetch('/api/subjects');
+        const subjects = await res.json();
+        document.getElementById('sessionSubject').innerHTML = '<option value="">Select Subject</option>' +
+            subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    }
+
+    async function loadAnalytics() {
+        const res = await fetch('/api/analytics');
+        const data = await res.json();
+
+        // Subject doughnut
+        if (data.by_subject.length && data.by_subject.some(s => s.hours > 0)) {
+            new Chart(document.getElementById('subjectChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: data.by_subject.map(s => s.name),
+                    datasets: [{
+                        data: data.by_subject.map(s => s.hours.toFixed(1)),
+                        backgroundColor: data.by_subject.map(s => s.color),
+                        borderWidth: 0, hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: { legend: { position: 'bottom', labels: { color: '#ccc', padding: 15 } } }
+                }
+            });
+        } else {
+            document.getElementById('subjectChart').style.display = 'none';
+            document.getElementById('subjectChartEmpty').style.display = 'flex';
+        }
+
+        // Daily trend
+        new Chart(document.getElementById('trendChart'), {
+            type: 'line',
+            data: {
+                labels: data.daily_trend.map(d => d.date),
+                datasets: [{
+                    label: 'Hours',
+                    data: data.daily_trend.map(d => d.hours),
+                    borderColor: '#6C63FF',
+                    backgroundColor: 'rgba(108,99,255,0.1)',
+                    fill: true, tension: 0.4, pointRadius: 2, pointHoverRadius: 6,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+                    x: { grid: { display: false }, ticks: { color: '#888', maxTicksLimit: 10 } }
+                }
+            }
+        });
+
+        // Hour heatmap
+        if (data.by_hour.length) {
+            const hourData = Array(24).fill(0);
+            data.by_hour.forEach(h => { hourData[h.hour] = h.hours; });
+            new Chart(document.getElementById('hourChart'), {
+                type: 'bar',
+                data: {
+                    labels: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+                    datasets: [{
+                        data: hourData,
+                        backgroundColor: hourData.map(h => h > 0 ? `rgba(108,99,255,${0.3 + Math.min(h / 5, 0.7)})` : 'rgba(255,255,255,0.05)'),
+                        borderRadius: 4, borderSkipped: false
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+                        x: { grid: { display: false }, ticks: { color: '#888', maxTicksLimit: 12 } }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('hourChart').style.display = 'none';
+            document.getElementById('hourChartEmpty').style.display = 'flex';
+        }
+    }
+
+    async function loadGoals() {
+        const res = await fetch('/api/goals');
+        const goals = await res.json();
+        const el = document.getElementById('goalsList');
+        if (!goals.length) { el.innerHTML = '<div class="empty-state-small"><i class="fas fa-trophy"></i> Set your first study goal!</div>'; return; }
+        el.innerHTML = goals.map(g => {
+            const pct = g.target_hours > 0 ? Math.min((g.current_hours / g.target_hours) * 100, 100) : 0;
+            return `
+        <div class="goal-item">
+            <div class="goal-header">
+                <span class="goal-title">${g.title}</span>
+                <button class="btn-icon danger" onclick="deleteGoal(${g.id})"><i class="fas fa-trash"></i></button>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: ${pct}%; background: ${pct >= 100 ? '#4ECDC4' : '#6C63FF'}"></div>
+            </div>
+            <div class="goal-meta">
+                <span>${g.current_hours.toFixed(1)} / ${g.target_hours}h</span>
+                <span>${pct.toFixed(0)}%</span>
+            </div>
+        </div>`;
+        }).join('');
+    }
+
+    async function loadSessionLog() {
+        const res = await fetch('/api/sessions');
+        const sessions = await res.json();
+        const el = document.getElementById('sessionLog');
+        if (!sessions.length) { el.innerHTML = '<div class="empty-state-small"><i class="fas fa-history"></i> No sessions logged yet</div>'; return; }
+        el.innerHTML = sessions.slice(0, 15).map(s => `
+        <div class="list-item">
+            <div class="list-item-color" style="background: ${s.subject_color || '#6C63FF'}"></div>
+            <div class="list-item-info">
+                <span class="list-item-title">${s.subject_name || 'General'}</span>
+                <span class="list-item-sub">${s.session_type} · ${s.notes || 'No notes'}</span>
+            </div>
+            <span class="list-item-badge">${s.duration_minutes}m</span>
+            <button class="btn-icon danger" onclick="deleteSession(${s.id})"><i class="fas fa-trash"></i></button>
+        </div>
+    `).join('');
+    }
+
+    function openGoalModal() { openModal('goalModal'); }
+    function openSessionModal() { openModal('sessionModal'); }
+
+    async function saveGoal(e) {
+        e.preventDefault();
+        await fetch('/api/goals', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: document.getElementById('goalTitle').value,
+                target_hours: parseFloat(document.getElementById('goalHours').value),
+                deadline: document.getElementById('goalDeadline').value || null
+            })
+        });
+        closeModal('goalModal');
+        loadGoals();
+        showToast('Goal added! 🎯', 'success');
+    }
+
+    async function deleteGoal(id) {
+        if (!confirm('Delete this goal?')) return;
+        await fetch(`/api/goals/${id}`, { method: 'DELETE' });
+        loadGoals();
+    }
+
+    async function saveSession(e) {
+        e.preventDefault();
+        await fetch('/api/sessions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subject_id: document.getElementById('sessionSubject').value || null,
+                duration_minutes: parseInt(document.getElementById('sessionDuration').value),
+                session_type: 'manual',
+                notes: document.getElementById('sessionNotes').value
+            })
+        });
+        closeModal('sessionModal');
+        loadSessionLog();
+        loadAnalytics();
+        showToast('Session logged! 📚', 'success');
+    }
+
+    async function deleteSession(id) {
+        if (!confirm('Delete this session?')) return;
+        await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+        loadSessionLog();
+    }
+</script>
+{% endblock %}

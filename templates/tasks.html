@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Tasks — Smart Study Planner{% endblock %}
+{% block page_title %}Tasks{% endblock %}
+{% block page_subtitle %}Track your assignments and todos.{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <div class="filter-group">
+        <button class="filter-btn active" data-filter="all" onclick="filterTasks('all', this)">All</button>
+        <button class="filter-btn" data-filter="pending" onclick="filterTasks('pending', this)">Pending</button>
+        <button class="filter-btn" data-filter="in_progress" onclick="filterTasks('in_progress', this)">In
+            Progress</button>
+        <button class="filter-btn" data-filter="completed" onclick="filterTasks('completed', this)">Completed</button>
+    </div>
+    <button class="btn btn-primary" onclick="openTaskModal()">
+        <i class="fas fa-plus"></i> Add Task
+    </button>
+</div>
+
+<div class="tasks-list" id="tasksList">
+    <div class="empty-state" id="tasksEmpty">
+        <i class="fas fa-clipboard-check"></i>
+        <h3>No tasks yet</h3>
+        <p>Add tasks to keep track of your assignments and deadlines.</p>
+    </div>
+</div>
+
+<!-- Task Modal -->
+<div class="modal" id="taskModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="taskModalTitle">Add Task</h3>
+            <button class="modal-close" onclick="closeModal('taskModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="taskForm" onsubmit="saveTask(event)">
+            <input type="hidden" id="taskId">
+            <div class="form-group">
+                <label>Title</label>
+                <input type="text" id="taskTitle" required placeholder="e.g. Complete Chapter 5 exercises">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="taskDescription" rows="3" placeholder="Optional details..."></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Subject</label>
+                    <select id="taskSubject">
+                        <option value="">No Subject</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select id="taskPriority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Deadline</label>
+                    <input type="date" id="taskDeadline">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="taskStatus">
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('taskModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allTasks = [];
+    let currentFilter = 'all';
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadTasks();
+        loadSubjectsForSelect();
+    });
+
+    async function loadSubjectsForSelect() {
+        const res = await fetch('/api/subjects');
+        const subjects = await res.json();
+        const sel = document.getElementById('taskSubject');
+        sel.innerHTML = '<option value="">No Subject</option>' + subjects.map(s =>
+            `<option value="${s.id}">${s.name}</option>`
+        ).join('');
+    }
+
+    async function loadTasks() {
+        const res = await fetch('/api/tasks');
+        allTasks = await res.json();
+        renderTasks();
+    }
+
+    function filterTasks(filter, btn) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        renderTasks();
+    }
+
+    function renderTasks() {
+        const list = document.getElementById('tasksList');
+        const empty = document.getElementById('tasksEmpty');
+        let filtered = currentFilter === 'all' ? allTasks : allTasks.filter(t => t.status === currentFilter);
+
+        if (!filtered.length) {
+            empty.style.display = 'flex';
+            list.innerHTML = '';
+            list.appendChild(empty);
+            return;
+        }
+        empty.style.display = 'none';
+
+        list.innerHTML = filtered.map(t => {
+            const priorityClass = `priority-${t.priority}`;
+            const deadlineStr = t.deadline ? formatDeadline(t.deadline) : '';
+            const checked = t.status === 'completed' ? 'checked' : '';
+            return `
+        <div class="task-item ${t.status === 'completed' ? 'task-completed' : ''}" data-id="${t.id}">
+            <div class="task-check">
+                <input type="checkbox" ${checked} onchange="toggleTask(${t.id})">
+            </div>
+            <div class="task-color" style="background: ${t.subject_color || '#6C63FF'}"></div>
+            <div class="task-info">
+                <h4 class="task-title">${t.title}</h4>
+                <div class="task-meta">
+                    ${t.subject_name ? `<span class="task-subject"><i class="fas fa-book"></i> ${t.subject_name}</span>` : ''}
+                    ${deadlineStr ? `<span class="task-deadline ${isOverdue(t.deadline) ? 'overdue' : ''}"><i class="fas fa-calendar"></i> ${deadlineStr}</span>` : ''}
+                </div>
+            </div>
+            <span class="task-priority ${priorityClass}">${t.priority}</span>
+            <div class="task-actions">
+                <button class="btn-icon" onclick="editTask(${t.id})"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>`;
+        }).join('');
+    }
+
+    function openTaskModal() {
+        document.getElementById('taskModalTitle').textContent = 'Add Task';
+        document.getElementById('taskId').value = '';
+        document.getElementById('taskForm').reset();
+        openModal('taskModal');
+    }
+
+    function editTask(id) {
+        const t = allTasks.find(x => x.id === id);
+        if (!t) return;
+        document.getElementById('taskModalTitle').textContent = 'Edit Task';
+        document.getElementById('taskId').value = t.id;
+        document.getElementById('taskTitle').value = t.title;
+        document.getElementById('taskDescription').value = t.description || '';
+        document.getElementById('taskSubject').value = t.subject_id || '';
+        document.getElementById('taskPriority').value = t.priority;
+        document.getElementById('taskDeadline').value = t.deadline || '';
+        document.getElementById('taskStatus').value = t.status;
+        openModal('taskModal');
+    }
+
+    async function saveTask(e) {
+        e.preventDefault();
+        const id = document.getElementById('taskId').value;
+        const body = {
+            title: document.getElementById('taskTitle').value,
+            description: document.getElementById('taskDescription').value,
+            subject_id: document.getElementById('taskSubject').value || null,
+            priority: document.getElementById('taskPriority').value,
+            deadline: document.getElementById('taskDeadline').value || null,
+            status: document.getElementById('taskStatus').value
+        };
+        const url = id ? `/api/tasks/${id}` : '/api/tasks';
+        const method = id ? 'PUT' : 'POST';
+        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        closeModal('taskModal');
+        loadTasks();
+        showToast(id ? 'Task updated!' : 'Task added!', 'success');
+    }
+
+    async function toggleTask(id) {
+        const res = await fetch(`/api/tasks/${id}/toggle`, { method: 'POST' });
+        const data = await res.json();
+        if (data.earned_xp) {
+            window.showXpToast(data.earned_xp);
+        }
+        loadTasks();
+    }
+
+    async function deleteTask(id) {
+        if (!confirm('Delete this task?')) return;
+        await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        loadTasks();
+        showToast('Task deleted', 'info');
+    }
+
+    function formatDeadline(d) {
+        const date = new Date(d);
+        const days = Math.ceil((date - new Date()) / 86400000);
+        if (days < 0) return `${Math.abs(days)}d overdue`;
+        if (days === 0) return 'Today';
+        if (days === 1) return 'Tomorrow';
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function isOverdue(d) { return new Date(d) < new Date(); }
+</script>
+{% endblock %}

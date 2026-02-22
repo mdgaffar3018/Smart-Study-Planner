@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Weekly Planner — Smart Study Planner{% endblock %}
+{% block page_title %}Weekly Planner{% endblock %}
+{% block page_subtitle %}Plan your study blocks for the week.{% endblock %}
+
+{% block content %}
+<div class="page-actions">
+    <button class="btn btn-primary" onclick="openBlockModal()">
+        <i class="fas fa-plus"></i> Add Study Block
+    </button>
+</div>
+
+<div class="planner-container">
+    <div class="planner-grid">
+        <div class="planner-header-cell time-col"></div>
+        <div class="planner-header-cell">Mon</div>
+        <div class="planner-header-cell">Tue</div>
+        <div class="planner-header-cell">Wed</div>
+        <div class="planner-header-cell">Thu</div>
+        <div class="planner-header-cell">Fri</div>
+        <div class="planner-header-cell">Sat</div>
+        <div class="planner-header-cell">Sun</div>
+    </div>
+    <div class="planner-body" id="plannerBody"></div>
+</div>
+
+<!-- Block Modal -->
+<div class="modal" id="blockModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add Study Block</h3>
+            <button class="modal-close" onclick="closeModal('blockModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <form onsubmit="saveBlock(event)">
+            <div class="form-group">
+                <label>Subject</label>
+                <select id="blockSubject" required>
+                    <option value="">Select Subject</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Day</label>
+                <select id="blockDay">
+                    <option value="0">Monday</option>
+                    <option value="1">Tuesday</option>
+                    <option value="2">Wednesday</option>
+                    <option value="3">Thursday</option>
+                    <option value="4">Friday</option>
+                    <option value="5">Saturday</option>
+                    <option value="6">Sunday</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Start Hour</label>
+                    <select id="blockStart"></select>
+                </div>
+                <div class="form-group">
+                    <label>End Hour</label>
+                    <select id="blockEnd"></select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Label (optional)</label>
+                <input type="text" id="blockTitle" placeholder="e.g. Chapter 5 review">
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('blockModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Block</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const HOURS = Array.from({ length: 15 }, (_, i) => i + 6); // 6 AM to 8 PM
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setupHourSelects();
+        renderPlannerGrid();
+        loadPlannerBlocks();
+        loadPlannerSubjects();
+    });
+
+    function setupHourSelects() {
+        const opts = HOURS.map(h => `<option value="${h}">${h}:00</option>`).join('');
+        document.getElementById('blockStart').innerHTML = opts;
+        document.getElementById('blockEnd').innerHTML = HOURS.slice(1).map(h => `<option value="${h}">${h}:00</option>`).join('');
+        document.getElementById('blockEnd').value = '7';
+    }
+
+    async function loadPlannerSubjects() {
+        const res = await fetch('/api/subjects');
+        const subjects = await res.json();
+        document.getElementById('blockSubject').innerHTML = '<option value="">Select Subject</option>' +
+            subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    }
+
+    function renderPlannerGrid() {
+        const body = document.getElementById('plannerBody');
+        body.innerHTML = HOURS.map(h => `
+        <div class="planner-row">
+            <div class="planner-time-cell">${h}:00</div>
+            ${Array.from({ length: 7 }, (_, d) => `
+                <div class="planner-cell" data-day="${d}" data-hour="${h}" 
+                     onclick="quickAddBlock(${d}, ${h})"></div>
+            `).join('')}
+        </div>
+    `).join('');
+    }
+
+    async function loadPlannerBlocks() {
+        const res = await fetch('/api/planner');
+        const blocks = await res.json();
+
+        // Clear existing blocks
+        document.querySelectorAll('.planner-block').forEach(el => el.remove());
+
+        blocks.forEach(b => {
+            const startIdx = HOURS.indexOf(b.start_hour);
+            const endIdx = HOURS.indexOf(b.end_hour);
+            if (startIdx === -1) return;
+
+            const height = Math.max(endIdx - startIdx, 1);
+            const cell = document.querySelector(`.planner-cell[data-day="${b.day_of_week}"][data-hour="${b.start_hour}"]`);
+            if (!cell) return;
+
+            const block = document.createElement('div');
+            block.className = 'planner-block';
+            block.style.cssText = `
+            background: ${b.subject_color || '#6C63FF'}30;
+            border-left: 3px solid ${b.subject_color || '#6C63FF'};
+            height: ${height * 100}%;
+            color: ${b.subject_color || '#6C63FF'};
+        `;
+            block.innerHTML = `
+            <span class="block-subject">${b.subject_name || 'Study'}</span>
+            ${b.title ? `<span class="block-label">${b.title}</span>` : ''}
+            <button class="block-delete" onclick="event.stopPropagation(); deleteBlock(${b.id})">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+            cell.appendChild(block);
+        });
+    }
+
+    function quickAddBlock(day, hour) {
+        document.getElementById('blockDay').value = day;
+        document.getElementById('blockStart').value = hour;
+        document.getElementById('blockEnd').value = Math.min(hour + 1, 20);
+        openModal('blockModal');
+    }
+
+    function openBlockModal() { openModal('blockModal'); }
+
+    async function saveBlock(e) {
+        e.preventDefault();
+        await fetch('/api/planner', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subject_id: document.getElementById('blockSubject').value,
+                day_of_week: parseInt(document.getElementById('blockDay').value),
+                start_hour: parseInt(document.getElementById('blockStart').value),
+                end_hour: parseInt(document.getElementById('blockEnd').value),
+                title: document.getElementById('blockTitle').value
+            })
+        });
+        closeModal('blockModal');
+        loadPlannerBlocks();
+        showToast('Study block added! 📅', 'success');
+    }
+
+    async function deleteBlock(id) {
+        await fetch(`/api/planner/${id}`, { method: 'DELETE' });
+        loadPlannerBlocks();
+        showToast('Block removed', 'info');
+    }
+</script>
+{% endblock %}
