@@ -10,7 +10,7 @@ load_dotenv()
 
 # --- Google Gemini AI ---
 try:
-    from google import genai
+    import google.generativeai as genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -18,7 +18,11 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = 'smart-study-planner-secret-key-2026'
 
-DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_planner.db')
+# Use /tmp for database on Vercel deployment, otherwise local directory
+if os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV'):
+    DATABASE = '/tmp/study_planner.db'
+else:
+    DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_planner.db')
 
 # --- Gemini AI Configuration ---
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
@@ -26,7 +30,8 @@ gemini_client = None
 
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
     try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=GEMINI_API_KEY)
+        gemini_client = genai.GenerativeModel('gemini-2.0-flash')
     except Exception:
         gemini_client = None
 
@@ -187,10 +192,7 @@ Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 Respond ONLY with a valid JSON array of 4 objects, each with keys: "title", "description", "type", "priority". No markdown, no extra text."""
 
     try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt
-        )
+        response = gemini_client.generate_content(prompt)
         text = response.text.strip()
         # Clean potential markdown wrapping
         if text.startswith('```'):
@@ -481,10 +483,7 @@ Here is their current study context:
 Respond naturally, concisely, and helpfully. Keep it under 3-4 sentences. Use emojis if appropriate. Acknowledge their tasks or stats if it makes sense contextually. Do not use markdown outside of bolding text. Do not return JSON."""
 
     try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt
-        )
+        response = gemini_client.generate_content(prompt)
         return jsonify({'reply': response.text.strip()})
     except Exception as e:
         return jsonify({'reply': f'Sorry, I encountered an error checking my circuits. {str(e)}'})
