@@ -35,7 +35,8 @@ def call_groq_rest(prompt, model_name='llama3-8b-8192'):
     
     req = urllib.request.Request(url, data=data, headers={
         'Content-Type': 'application/json',
-        'Authorization': f'Bearer {GROQ_API_KEY}'
+        'Authorization': f'Bearer {GROQ_API_KEY}',
+        'User-Agent': 'SmartStudyPlanner/1.0'
     })
     
     with urllib.request.urlopen(req) as response:
