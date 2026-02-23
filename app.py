@@ -457,6 +457,12 @@ def get_smart_fallback_suggestions(context):
 
 # ===================== PAGE ROUTES =====================
 
+from flask import send_from_directory
+
+@app.route('/google40531eb192b92e63.html')
+def google_verification():
+    return send_from_directory('static', 'google40531eb192b92e63.html')
+
 @app.route('/')
 @login_required
 def dashboard():
